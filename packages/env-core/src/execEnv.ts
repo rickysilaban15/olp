@@ -17,11 +17,13 @@ export function execEnv(
 ): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = { ...base };
   if (detected.pathExtra.length === 0) return out;
-  const delimiter = path.delimiter;
-  const current = (out['PATH'] ?? '').split(delimiter).filter((d) => d !== '');
+  const delimiter =
+    detected.id === 'windows' ? ';' : detected.id === 'unknown' ? path.delimiter : ':';
+  const pathKey = out['PATH'] !== undefined ? 'PATH' : out['Path'] !== undefined ? 'Path' : 'PATH';
+  const current = (out[pathKey] ?? '').split(delimiter).filter((d) => d !== '');
   for (const dir of detected.pathExtra) {
     if (dir !== '' && !current.includes(dir)) current.push(dir);
   }
-  out['PATH'] = current.join(delimiter);
+  out[pathKey] = current.join(delimiter);
   return out;
 }

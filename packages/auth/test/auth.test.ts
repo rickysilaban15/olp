@@ -28,16 +28,47 @@ import type { AuthConfig, ConfigIo } from '../src/index.js';
 
 /** In-memory fs fake that also records write modes. */
 function memIo(files: Record<string, string> = {}): ConfigIo & { modes: string[]; store: Record<string, string> } {
-  const store: Record<string, string> = { ...files };
+  const norm = (p: string) => p.replace(/\\/g, '/');
+  const rawStore: Record<string, string> = {};
+  for (const [k, v] of Object.entries(files)) {
+    rawStore[norm(k)] = v;
+  }
+  const store = new Proxy(rawStore, {
+    get(target, prop: string | symbol) {
+      if (typeof prop === 'string') {
+        return target[norm(prop)];
+      }
+      return (target as any)[prop];
+    },
+    set(target, prop: string | symbol, value: any) {
+      if (typeof prop === 'string') {
+        target[norm(prop)] = value;
+      } else {
+        (target as any)[prop] = value;
+      }
+      return true;
+    },
+    has(target, prop: string | symbol) {
+      if (typeof prop === 'string') {
+        return norm(prop) in target;
+      }
+      return prop in target;
+    },
+  });
   const modes: string[] = [];
   return {
     store,
     modes,
     mkdirp: () => {},
-    readFile: (f) => (f in store ? (store[f] as string) : null),
+    readFile: (f) => {
+      const key = norm(f);
+      return key in store ? (store[key] as string) : null;
+    },
     writeFile: (f, data) => {
-      store[f] = data;
-      modes.push(f);
+      const key = norm(f);
+      store[key] = data;
+      modes.push(key);
+      if (f !== key) modes.push(f);
     },
   };
 }

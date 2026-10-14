@@ -177,4 +177,31 @@ describe('execEnv', () => {
     expect(out).toEqual(base);
     expect(out).not.toBe(base);
   });
+
+  it('appends pathExtra with windows delimiter for windows environment', () => {
+    const base = { PATH: 'C:\\Windows\\System32;C:\\Windows' };
+    const out = execEnv(base, {
+      id: 'windows',
+      prettyName: 'Windows',
+      pkgman: 'winget',
+      service: 'windows-sc',
+      isWsl: false,
+      prefix: '',
+      shell: 'powershell.exe',
+      pathExtra: ['C:\\Program Files\\OLP\\bin', 'C:\\Windows'],
+    });
+    expect(out['PATH']).toBe('C:\\Windows\\System32;C:\\Windows;C:\\Program Files\\OLP\\bin');
+    expect(base['PATH']).toBe('C:\\Windows\\System32;C:\\Windows');
+    const again = execEnv(out, {
+      id: 'windows',
+      prettyName: 'Windows',
+      pkgman: 'winget',
+      service: 'windows-sc',
+      isWsl: false,
+      prefix: '',
+      shell: 'powershell.exe',
+      pathExtra: ['C:\\Program Files\\OLP\\bin'],
+    });
+    expect(again['PATH']).toBe(out['PATH']);
+  });
 });
