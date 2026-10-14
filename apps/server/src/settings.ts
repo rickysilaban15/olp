@@ -46,8 +46,8 @@ const HOST_RE = /^[a-zA-Z0-9.:\[\]-]{1,253}$/;
 
 /** Persisted settings store (`settings.json` in production, memory in tests). */
 export interface SettingsStore {
-  load(): Settings;
-  save(settings: Settings): void;
+  load(): Settings | Promise<Settings>;
+  save(settings: Settings): void | Promise<void>;
 }
 
 /** Fresh defaults (bot off, commands allowed once enabled, no bind override). */
@@ -188,7 +188,7 @@ export function currentBind(): BindInfo {
 export function registerSettingsRoutes(app: FastifyInstance, opts: SettingsRouteOptions): void {
   app.get('/api/settings', async () => ({
     username: opts.username(),
-    telegram: opts.store.load().telegram,
+    telegram: (await opts.store.load()).telegram,
     version: opts.version,
     bind: {
       host: opts.bindReport.configured.host,
@@ -203,9 +203,9 @@ export function registerSettingsRoutes(app: FastifyInstance, opts: SettingsRoute
 
   app.post('/api/settings', { bodyLimit: 1024 * 1024 }, async (req) => {
     const body = ((req.body ?? {}) as Record<string, unknown>);
-    const store = opts.store.load();
+    const store = await opts.store.load();
     store.telegram = normalizeTelegram(body);
-    opts.store.save(store);
+    await opts.store.save(store);
     try {
       opts.onTelegramConfig();
     } catch {
@@ -215,7 +215,7 @@ export function registerSettingsRoutes(app: FastifyInstance, opts: SettingsRoute
   });
 
   app.post('/api/settings/test-telegram', async (_req, reply) => {
-    const tg = opts.store.load().telegram;
+    const tg = (await opts.store.load()).telegram;
     if (!tg.enabled || tg.botToken === '' || tg.chatId === '') {
       reply.code(400);
       return { ok: false as const, error: 'Fill in bot token & chat ID and enable it first' };
@@ -248,9 +248,9 @@ export function registerSettingsRoutes(app: FastifyInstance, opts: SettingsRoute
     // Persist only (the listener cannot move without a restart —
     // the response says so, never silent). The shared holder
     // re-resolves so GET stays truthful (effective untouched).
-    const store = opts.store.load();
+    const store = await opts.store.load();
     store.bind = checked.bind;
-    opts.store.save(store);
+    await opts.store.save(store);
     const resolved = resolveBind(process.env, checked.bind);
     opts.bindReport.configured = resolved.bind;
     opts.bindReport.source = resolved.source;

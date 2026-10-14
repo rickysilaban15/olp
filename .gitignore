@@ -1,10 +1,41 @@
 # Legacy reference (separate repo, frozen) - not tracked in OLP repo
 terwo/
 mockup/
-# Future monorepo ignores
+
+# Monorepo build and dependency ignores
 node_modules/
 dist/
 build/
 coverage/
 *.log
+
+# Environment configuration & secrets (keep example templates tracked)
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.crt
+master.key
+
+# Storage state machine runtime state
+storage.state
+
+# Database persistence directories (Docker volume mounts & local data)
+oradata/
+oracle-data/
+data/
+
+# Backup archives & bundle snapshots
+*.bundle.json
+*.bundle.tar.gz
+*.sql.gz
+
+# IDE and OS artifacts
+.vscode/
+.idea/
 .DS_Store
+Thumbs.db
+

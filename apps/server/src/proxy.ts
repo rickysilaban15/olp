@@ -16,8 +16,8 @@ export interface Proxy {
 
 /** Persisted proxy registry (`nginx.json` in production, memory in tests). */
 export interface ProxyStore {
-  list(): Proxy[];
-  save(proxies: Proxy[]): void;
+  list(): Proxy[] | Promise<Proxy[]>;
+  save(proxies: Proxy[]): void | Promise<void>;
 }
 
 /** Injected OS surface (real fs/exec in production, memory fakes in tests). */
@@ -156,7 +156,7 @@ async function writeAll(opts: ProxyOptions): Promise<void> {
   for (const file of sys.listDir(opts.sitesDir)) {
     if (file.startsWith('panel-') && file.endsWith('.conf')) sys.removeFile(join(opts.sitesDir, file));
   }
-  for (const proxy of opts.store.list()) {
+  for (const proxy of await opts.store.list()) {
     sys.writeFile(join(opts.sitesDir, `panel-${proxy.id}.conf`), nginxConfBlock(proxy));
   }
   const confPath = nginxConfPath(opts.prefix);
@@ -236,7 +236,7 @@ export function registerProxyRoutes(app: FastifyInstance, opts: ProxyOptions): v
     return { ok: true };
   });
 
-  app.get('/api/nginx/proxies', async () => ({ proxies: opts.store.list() }));
+  app.get('/api/nginx/proxies', async () => ({ proxies: await opts.store.list() }));
 
   app.post('/api/nginx/proxies', { bodyLimit: 1024 * 1024 }, async (req) => {
     const body = ((req.body ?? {}) as Record<string, unknown>);
@@ -252,7 +252,8 @@ export function registerProxyRoutes(app: FastifyInstance, opts: ProxyOptions): v
     }
     const domain = strField(body, 'domain').trim();
     if (domain !== '' && !/^[a-zA-Z0-9.*_-]+$/.test(domain)) throw new Error('Invalid domain');
-    if (opts.store.list().some((p) => p.listenPort === listenPort)) {
+    const currentProxies = await opts.store.list();
+    if (currentProxies.some((p) => p.listenPort === listenPort)) {
       throw new Error('Listen port is already used by another proxy');
     }
     const proxy: Proxy = {
@@ -263,13 +264,13 @@ export function registerProxyRoutes(app: FastifyInstance, opts: ProxyOptions): v
       targetPort,
       created: Date.now(),
     };
-    const proxies = opts.store.list();
+    const proxies = await opts.store.list();
     proxies.push(proxy);
-    opts.store.save(proxies);
+    await opts.store.save(proxies);
     try {
       await writeAll(opts);
     } catch (err) {
-      opts.store.save(opts.store.list().filter((p) => p.id !== proxy.id));
+      await opts.store.save((await opts.store.list()).filter((p) => p.id !== proxy.id));
       throw err;
     }
     await tryReload(opts.sys);
@@ -279,7 +280,7 @@ export function registerProxyRoutes(app: FastifyInstance, opts: ProxyOptions): v
   app.delete('/api/nginx/proxies/:id', async (req) => {
     const params = (req.params ?? {}) as Record<string, unknown>;
     const id = typeof params['id'] === 'string' ? params['id'] : '';
-    opts.store.save(opts.store.list().filter((p) => p.id !== id));
+    await opts.store.save((await opts.store.list()).filter((p) => p.id !== id));
     try {
       await writeAll(opts);
     } catch {

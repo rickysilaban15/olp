@@ -46,8 +46,8 @@ export interface SiteSpawner {
 
 /** Persisted site registry (`sites.json` in production, memory in tests). */
 export interface SiteStore {
-  list(): Site[];
-  save(sites: Site[]): void;
+  list(): Site[] | Promise<Site[]>;
+  save(sites: Site[]): void | Promise<void>;
 }
 
 /** File-backed registry in the server data dir (mode `0600`, auth-config parity). */
@@ -175,7 +175,7 @@ function isSiteType(value: unknown): value is SiteType {
 export function registerSitesRoutes(app: FastifyInstance, opts: SitesOptions): void {
   const { running, deadLogs } = opts.runtime ?? createSiteRuntime();
 
-  const findSite = (id: string): Site | undefined => opts.store.list().find((s) => s.id === id);
+  const findSite = async (id: string): Promise<Site | undefined> => (await opts.store.list()).find((s) => s.id === id);
 
   const pushLog = (id: string, line: string): void => {
     const rec = running.get(id);
@@ -263,8 +263,9 @@ export function registerSitesRoutes(app: FastifyInstance, opts: SitesOptions): v
         }
       }),
     );
+    const currentSites = await opts.store.list();
     return {
-      sites: opts.store.list().map((site) => {
+      sites: currentSites.map((site) => {
         const rec = running.get(site.id);
         const st = rec === undefined ? null : (stats.get(site.id) ?? null);
         return {
@@ -288,7 +289,8 @@ export function registerSitesRoutes(app: FastifyInstance, opts: SitesOptions): v
     if (!Number.isInteger(port) || port < 1024 || port > 65535) {
       throw new Error('Port must be 1024–65535');
     }
-    if (opts.store.list().some((s) => s.port === port)) {
+    const existingSites = await opts.store.list();
+    if (existingSites.some((s) => s.port === port)) {
       throw new Error('Port is already used by another website');
     }
     const full = safePath(opts.root, strField(body, 'path'));
@@ -314,9 +316,9 @@ export function registerSitesRoutes(app: FastifyInstance, opts: SitesOptions): v
       port,
       created: Date.now(),
     };
-    const sites = opts.store.list();
+    const sites = await opts.store.list();
     sites.push(site);
-    opts.store.save(sites);
+    await opts.store.save(sites);
     return { ok: true, site };
   });
 
@@ -324,7 +326,7 @@ export function registerSitesRoutes(app: FastifyInstance, opts: SitesOptions): v
     app.post(`/api/sites/:id/${action}`, async (req, reply) => {
       const params = (req.params ?? {}) as Record<string, unknown>;
       const id = typeof params['id'] === 'string' ? params['id'] : '';
-      const site = findSite(id);
+      const site = await findSite(id);
       if (site === undefined) return notFound(reply);
       if (action === 'start') {
         await startSite(site);
@@ -364,7 +366,8 @@ export function registerSitesRoutes(app: FastifyInstance, opts: SitesOptions): v
         }
         running.delete(site.id);
       }
-      opts.store.save(opts.store.list().filter((s) => s.id !== site.id));
+      const remainingSites = (await opts.store.list()).filter((s) => s.id !== site.id);
+      await opts.store.save(remainingSites);
       deadLogs.delete(site.id);
       return { ok: true };
     });
@@ -373,7 +376,7 @@ export function registerSitesRoutes(app: FastifyInstance, opts: SitesOptions): v
   app.get('/api/sites/:id/logs', async (req, reply) => {
     const params = (req.params ?? {}) as Record<string, unknown>;
     const id = typeof params['id'] === 'string' ? params['id'] : '';
-    if (findSite(id) === undefined) return notFound(reply);
+    if ((await findSite(id)) === undefined) return notFound(reply);
     const rec = running.get(id);
     if (rec !== undefined) return { logs: rec.logs.join(''), running: true };
     return { logs: deadLogs.get(id) ?? '', running: false };

@@ -35,7 +35,7 @@ import { registerServicesRoutes } from './services.js';
 import type { ServicesControllerOf } from './services.js';
 import { realSpawnShell, registerStoreRoutes } from './store.js';
 import type { SpawnShell } from './store.js';
-import { fileSettingsStore, registerSettingsRoutes } from './settings.js';
+import { defaultSettings, fileSettingsStore, registerSettingsRoutes } from './settings.js';
 import { freshReport, resolveBind } from './settings.js';
 import type { BindConfig, BindReport } from './settings.js';
 import type { SettingsStore } from './settings.js';
@@ -183,7 +183,12 @@ export function buildServer(opts: ServerOptions = {}): ServerHandle {
     drivers: dbDrivers,
   });
   const bundleDbConfig =
-    opts.backupDbConfig ?? ((engine) => normalizeConfig(engine, (dbRegistry.load()[engine] ?? {}) as Record<string, unknown>));
+    opts.backupDbConfig ??
+    ((engine) => {
+      const loaded = dbRegistry.load();
+      const cfgs = loaded instanceof Promise ? {} : loaded;
+      return normalizeConfig(engine, (cfgs[engine] ?? {}) as Record<string, unknown>);
+    });
   const cronBackend = opts.cronBackend ?? nodeCronBackend();
   registerBackupRoutes(app, {
     dataDir: auth.dataDir,
@@ -228,11 +233,14 @@ export function buildServer(opts: ServerOptions = {}): ServerHandle {
   const settingsStore = opts.settingsStore ?? fileSettingsStore(auth.dataDir);
   // Bind report holder (resolved here so boot and routes share one
   // source of truth; listen mutates effective/fallback in W13-03).
-  const bindResolved = resolveBind(process.env, settingsStore.load().bind ?? null);
+  const loadedSettings = settingsStore.load();
+  const initialSettings = loadedSettings instanceof Promise ? defaultSettings() : loadedSettings;
+  const bindResolved = resolveBind(process.env, initialSettings.bind ?? null);
   const bind = freshReport(bindResolved.bind, bindResolved.source);
   const telegramApi = opts.telegramApi ?? nodeTelegramApi();
   const botStatus = async (): Promise<BotStatus> => {
     const info = await getSystemInfo(env, sysDeps, root);
+    const sites = await siteStore.list();
     return {
       hostname: info.hostname,
       uptime: info.uptime,
@@ -240,7 +248,7 @@ export function buildServer(opts: ServerOptions = {}): ServerHandle {
       mem: info.mem,
       disk: info.disk,
       battery: info.battery,
-      sites: siteStore.list().map((site) => ({
+      sites: sites.map((site) => ({
         name: site.name,
         type: site.type,
         port: site.port,
@@ -249,22 +257,24 @@ export function buildServer(opts: ServerOptions = {}): ServerHandle {
     };
   };
   const bot = new TelegramBot({
-    settings: () => settingsStore.load().telegram,
+    settings: async () => (await settingsStore.load()).telegram,
     api: telegramApi,
     status: botStatus,
   });
   const notifyTelegram = (text: string): void => {
-    try {
-      const tg = settingsStore.load().telegram;
-      if (!tg.enabled || tg.botToken === '' || tg.chatId === '') return;
-      telegramApi.sendMessage(tg.botToken, tg.chatId, text).catch((err: unknown) => {
+    Promise.resolve(settingsStore.load())
+      .then((settings) => {
+        const tg = settings.telegram;
+        if (!tg.enabled || tg.botToken === '' || tg.chatId === '') return;
+        telegramApi.sendMessage(tg.botToken, tg.chatId, text).catch((err: unknown) => {
+          // eslint-disable-next-line no-console
+          console.log('Telegram failed:', err instanceof Error ? err.message : String(err));
+        });
+      })
+      .catch((err: unknown) => {
         // eslint-disable-next-line no-console
         console.log('Telegram failed:', err instanceof Error ? err.message : String(err));
       });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.log('Telegram failed:', err instanceof Error ? err.message : String(err));
-    }
   };
   let pollTimer: NodeJS.Timeout | null = null;
   const stopPoller = (): void => {
@@ -299,7 +309,7 @@ export function buildServer(opts: ServerOptions = {}): ServerHandle {
     bindReport: bind,
     restart: opts.settingsRestart,
     botUsername: opts.settingsBotUsername ?? (async () => {
-      const tg = settingsStore.load().telegram;
+      const tg = (await settingsStore.load()).telegram;
       if (!tg.enabled || tg.botToken === '') return null;
       try {
         return await telegramApi.getMe(tg.botToken);
@@ -308,8 +318,8 @@ export function buildServer(opts: ServerOptions = {}): ServerHandle {
       }
     }),
   });
-  const siteWatcher = (): Array<{ id: string; name: string; port: number; running: boolean }> =>
-    siteStore.list().map((site) => ({
+  const siteWatcher = async (): Promise<Array<{ id: string; name: string; port: number; running: boolean }>> =>
+    (await siteStore.list()).map((site) => ({
       id: site.id,
       name: site.name,
       port: site.port,

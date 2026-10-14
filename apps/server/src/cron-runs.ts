@@ -17,8 +17,8 @@ export interface RunRecord {
 
 /** Bounded run-result store (newest-first reads). */
 export interface RunStore {
-  list(limit: number): RunRecord[];
-  append(run: RunRecord): void;
+  list(limit: number): RunRecord[] | Promise<RunRecord[]>;
+  append(run: RunRecord): void | Promise<void>;
 }
 
 const DEFAULT_CAP = 500;

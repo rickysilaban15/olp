@@ -1,0 +1,59 @@
+# ==============================================================================
+# OpenLocalPanel (OLP) - Docker Compose for Oracle Database Free 23ai
+# ==============================================================================
+# ARSITEKTUR:
+# - Oracle Database Free berjalan terisolasi di dalam container Docker.
+# - Aplikasi OLP berjalan secara NATIVE pada host Linux (untuk mengelola
+#   systemd, Nginx, cron, filesystem, dan terminal secara langsung).
+# - Listener port 1521 HANYA diikat ke loopback interface host (127.0.0.1),
+#   sehingga TIDAK terekspos ke jaringan publik atau LAN.
+#
+# PENGGUNAAN:
+# 1. Pastikan file '.env' sudah dibuat dari '.env.oracle.example'.
+# 2. Jalankan container:
+#    docker compose -f docker-compose.oracle.yml up -d
+# 3. Pantau status inisialisasi:
+#    docker compose -f docker-compose.oracle.yml ps
+#    docker compose -f docker-compose.oracle.yml logs -f
+# ==============================================================================
+
+services:
+  oracle-db:
+    image: ${ORACLE_IMAGE:-gvenzl/oracle-free:23-slim}
+    container_name: olp-oracle-db
+    restart: unless-stopped
+    ports:
+      # PENTING: Hanya bind ke localhost (127.0.0.1) untuk mencegah eksposur eksternal
+      - "127.0.0.1:1521:1521"
+    environment:
+      # Password administratif untuk akun SYS dan SYSTEM
+      ORACLE_PASSWORD: ${ORACLE_SYS_PASSWORD}
+      # Nama Pluggable Database (PDB) default untuk OLP
+      ORACLE_DATABASE: ${ORACLE_SERVICE_NAME:-FREEPDB1}
+      # Akun pengguna aplikasi yang dibuat otomatis dengan hak akses terisolasi
+      APP_USER: ${ORACLE_USER:-olp_app}
+      # Password pengguna aplikasi (harus sama dengan ORACLE_PASSWORD di file .env aplikasi)
+      APP_USER_PASSWORD: ${ORACLE_PASSWORD}
+    volumes:
+      # Persistensi data database Oracle (datafiles, redo logs, undo tablespace)
+      - olp_oracle_data:/opt/oracle/oradata
+      # Direktori skrip inisialisasi opsional (hanya dieksekusi saat container pertama kali dibuat)
+      - ./docker/oracle-init:/container-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/oracle/healthcheck.sh"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+    # Rekomendasi batas sumber daya pada Mini PC / Linux VM (opsional)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 3072M
+    #     reservations:
+    #       memory: 1536M
+
+volumes:
+  olp_oracle_data:
+    name: olp_oracle_data
+    # Data tersimpan aman di Docker volume dan tidak terhapus saat container di-restart

@@ -76,8 +76,8 @@ export interface TableDef {
 
 /** Persisted credential registry (`db.json` in production, memory in tests). */
 export interface DbRegistry {
-  load(): Partial<Record<DbEngine, DbConfig>>;
-  save(cfgs: Partial<Record<DbEngine, DbConfig>>): void;
+  load(): Partial<Record<DbEngine, DbConfig>> | Promise<Partial<Record<DbEngine, DbConfig>>>;
+  save(cfgs: Partial<Record<DbEngine, DbConfig>>): void | Promise<void>;
 }
 
 /** Inputs for {@link registerDatabaseRoutes}. */
@@ -387,8 +387,9 @@ export function pgDriver(): DbDriver {
 
 const ENGINES: DbEngine[] = ['mysql', 'postgres'];
 
-function storedConfig(registry: DbRegistry, engine: DbEngine): DbConfig {
-  return { ...defaultDbConfig(engine), ...registry.load()[engine] };
+async function storedConfig(registry: DbRegistry, engine: DbEngine): Promise<DbConfig> {
+  const loaded = await registry.load();
+  return { ...defaultDbConfig(engine), ...loaded[engine] };
 }
 
 function strQuery(query: unknown, key: string): string {
@@ -442,15 +443,15 @@ export function registerDatabaseRoutes(app: FastifyInstance, opts: DatabaseOptio
     const base = `/api/db/${engine}`;
 
     app.get(`${base}/config`, async () => ({
-      config: storedConfig(opts.registry, engine),
+      config: await storedConfig(opts.registry, engine),
       connected: live.has(engine),
     }));
 
     app.post(`${base}/config`, { bodyLimit: 1024 * 1024 }, async (req) => {
       const body = ((req.body ?? {}) as Record<string, unknown>);
-      const cfgs = opts.registry.load();
+      const cfgs = await opts.registry.load();
       cfgs[engine] = normalizeConfig(engine, body);
-      opts.registry.save(cfgs);
+      await opts.registry.save(cfgs);
       return { ok: true };
     });
 
@@ -468,9 +469,9 @@ export function registerDatabaseRoutes(app: FastifyInstance, opts: DatabaseOptio
     app.post(`${base}/connect`, { bodyLimit: 1024 * 1024 }, async (req) => {
       const body = ((req.body ?? {}) as Record<string, unknown>);
       const cfg = normalizeConfig(engine, body);
-      const cfgs = opts.registry.load();
+      const cfgs = await opts.registry.load();
       cfgs[engine] = cfg;
-      opts.registry.save(cfgs);
+      await opts.registry.save(cfgs);
       const old = live.get(engine);
       if (old !== undefined) {
         live.delete(engine);
@@ -512,7 +513,7 @@ export function registerDatabaseRoutes(app: FastifyInstance, opts: DatabaseOptio
         return { error: 'Invalid database name (letters, digits, _ and $, max 64)' };
       }
       try {
-        await driver.createDatabase(storedConfig(opts.registry, engine), name);
+        await driver.createDatabase(await storedConfig(opts.registry, engine), name);
         return { ok: true, databases: await driver.listDatabases(conn) };
       } catch (err) {
         const message = err instanceof Error && err.message !== '' ? err.message : 'Create failed';
@@ -526,7 +527,7 @@ export function registerDatabaseRoutes(app: FastifyInstance, opts: DatabaseOptio
       if (conn === undefined) throw new Error('Not connected');
       const db = strQuery(req.query, 'db');
       if (db === '') throw new Error('Database must be selected');
-      return { tables: await driver.tableStats(storedConfig(opts.registry, engine), db) };
+      return { tables: await driver.tableStats(await storedConfig(opts.registry, engine), db) };
     });
 
     app.get(`${base}/ddl`, async (req) => {
@@ -536,7 +537,7 @@ export function registerDatabaseRoutes(app: FastifyInstance, opts: DatabaseOptio
       const table = strQuery(req.query, 'table');
       if (db === '' || table === '') throw new Error('Database and table are required');
       if (db.length > 128 || table.length > 128) throw new Error('Name too long');
-      return driver.tableDef(storedConfig(opts.registry, engine), db, table);
+      return driver.tableDef(await storedConfig(opts.registry, engine), db, table);
     });
 
     app.get(`${base}/tables`, async (req) => {
@@ -544,7 +545,7 @@ export function registerDatabaseRoutes(app: FastifyInstance, opts: DatabaseOptio
       if (conn === undefined) throw new Error('Not connected');
       const db = strQuery(req.query, 'db');
       if (db === '') throw new Error('Database must be selected');
-      return { tables: await driver.listTables(storedConfig(opts.registry, engine), db) };
+      return { tables: await driver.listTables(await storedConfig(opts.registry, engine), db) };
     });
 
     app.get(`${base}/rows`, async (req) => {
@@ -554,7 +555,7 @@ export function registerDatabaseRoutes(app: FastifyInstance, opts: DatabaseOptio
       const table = strQuery(req.query, 'table');
       if (db === '' || table === '') throw new Error('Database and table are required');
       if (db.length > 128 || table.length > 128) throw new Error('Name too long');
-      return driver.previewRows(storedConfig(opts.registry, engine), db, table);
+      return driver.previewRows(await storedConfig(opts.registry, engine), db, table);
     });
 
     app.post(`${base}/query`, { bodyLimit: 1024 * 1024 }, async (req) => {

@@ -17,6 +17,8 @@
   "scripts": {
     "build": "npm run build --workspace=@olp/env-core && npm run build --workspace=@olp/auth && npm run build --workspace=@olp/sysinfo && npm run build --workspace=@olp/pkgman && npm run build --workspace=@olp/services && npm run build --workspace=@olp/server && npm run build --workspace=@olp/web && npm run build --workspace=@olp/cli",
     "test": "npm run test --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "migrate:oracle": "npm run migrate:oracle --workspace=@olp/server",
+    "import:oracle": "npm run import:oracle --workspace=@olp/server"
   }
 }

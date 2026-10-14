@@ -15,7 +15,9 @@
     "test": "vitest run",
     "lint": "echo '@olp/server: no lint yet'",
     "dev": "tsx src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "migrate:oracle": "tsx src/oracle/cli/migrate.ts",
+    "import:oracle": "tsx src/oracle/cli/import.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.6",
@@ -28,10 +30,12 @@
     "@simplewebauthn/server": "14.0.3",
     "fastify": "^5.0.0",
     "mysql2": "^3.24.5",
+    "oracledb": "^6.10.0",
     "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/oracledb": "^7.0.3",
     "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.2",
     "tsx": "^4.0.0",

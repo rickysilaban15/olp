@@ -18,7 +18,7 @@ export interface WatchdogProbe {
 
 /** Inputs for {@link createWatchdog} (all injected; no timers inside). */
 export interface WatchdogOptions {
-  sites: () => WatchedSite[];
+  sites: () => WatchedSite[] | Promise<WatchedSite[]>;
   probe: WatchdogProbe;
   notify: (text: string) => void;
 }
@@ -61,7 +61,7 @@ export function createWatchdog(opts: WatchdogOptions): Watchdog {
       return down.size;
     },
     checkOnce: async () => {
-      for (const site of opts.sites()) {
+      for (const site of await opts.sites()) {
         if (!site.running) {
           down.delete(site.id);
           continue;

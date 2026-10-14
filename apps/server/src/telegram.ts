@@ -210,7 +210,7 @@ export function botReply(status: BotStatus, command: string): string {
 
 /** Inputs for {@link TelegramBot} (all injected; the class owns no timers). */
 export interface BotDeps {
-  settings: () => TelegramSettings;
+  settings: () => TelegramSettings | Promise<TelegramSettings>;
   api: TelegramApi;
   status: () => Promise<BotStatus>;
 }
@@ -236,7 +236,7 @@ export class TelegramBot {
 
   /** Fast-forward past history without answering (startup parity). */
   async drain(): Promise<void> {
-    const tg = this.deps.settings();
+    const tg = await this.deps.settings();
     if (!this.pollingAllowed(tg)) return;
     try {
       const updates = await this.deps.api.getUpdates(tg.botToken, this.offset, 0);
@@ -250,7 +250,7 @@ export class TelegramBot {
   }
 
   async pollOnce(): Promise<void> {
-    const tg = this.deps.settings();
+    const tg = await this.deps.settings();
     if (!this.pollingAllowed(tg)) return;
     let updates: TelegramUpdate[];
     try {
